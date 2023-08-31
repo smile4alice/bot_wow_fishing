@@ -37,7 +37,7 @@ def main():
     for i in range(1, 501):
         logger.info(f"#{i}")
         sleep(uniform(2, 7))
-        if random() <= 0.95:
+        if random() <= 0.05:
             func = choice(human_simulatons)
             logger.warning(func.__name__)
             func()
