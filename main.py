@@ -1,25 +1,17 @@
 import threading
 from time import sleep
-from random import uniform, randint
+from random import uniform, randint, random, choice
 import os
 
 import numpy as np
-from PIL import ImageGrab
-import cv2
 import pyautogui
 import keyboard
 
 from services.logger import logger
+from services.vision_helpers import create_screenshot, search_floater
+from services.human_simulation import smoothly_move, human_simulatons
 
-
-def create_screenshot(mode: str | None = None) -> np.ndarray:
-    base_screen = np.array(ImageGrab.grab(bbox=(0, 0, 1484, 843)))
-    if mode == "bgr":
-        return cv2.cvtColor(base_screen, cv2.COLOR_RGB2BGR)
-    else:
-        # cv2.imshow("s", cv2.cvtColor(base_screen, cv2.COLOR_RGB2GRAY))
-        # cv2.waitKey(0)
-        return cv2.cvtColor(base_screen, cv2.COLOR_RGB2GRAY)
+workspace_bbox = (0, 0, 1484, 843)
 
 
 def exit_on_esc():
@@ -32,24 +24,25 @@ def exit_on_esc():
 
 
 def main():
+    global workspace_bbox
+
     exit_thread = threading.Thread(target=exit_on_esc)
     exit_thread.daemon = True
     exit_thread.start()
 
-    average = [
-        0,
-    ]
+    average = [0]
     interruption_indicator = False
     break_counter = 0
 
-    template = cv2.imread("templates/template.png", 0)
-    w, h = template.shape
+    for i in range(1, 501):
+        logger.info(f"#{i}")
+        sleep(uniform(2, 7))
+        if random() <= 0.95:
+            func = choice(human_simulatons)
+            logger.warning(func.__name__)
+            func()
 
-    for i in range(1000):
-        logger.info(f'iteration #{i}')
-        sleep(uniform(1, 7))
-
-        if break_counter > 5:
+        if break_counter > 2:
             logger.warning("OVER")
             pyautogui.press("space")
             sleep(uniform(1, 10))
@@ -57,45 +50,48 @@ def main():
             break
 
         pyautogui.press("1")
-        sleep(2)
+        sleep(uniform(1.8,2.2))
 
-        img_gray = create_screenshot()
-        res = cv2.matchTemplate(img_gray, template, cv2.TM_CCOEFF_NORMED)
+        img_gray = create_screenshot("bgr", bbox=workspace_bbox)
 
-        # TODO test
-        test_match = cv2.minMaxLoc(res)
-        logger.warning(test_match[1])
-
-        loc = np.where(res >= 0.68)
-
+        res = search_floater(img_gray)
+        loc = res["loc"]
+        template_width, template_heigth, _ = res["template"].shape
+        sleep(1)
         for _ in range(100):
-            sleep(0.25)
+            sleep(0.23)
             try:
-                clean_screen = ImageGrab.grab(bbox=(x, y, x + w, y + h))
+                clean_screen = create_screenshot(bbox=(x, y, x + template_width, y + template_heigth))
                 mean = np.mean(clean_screen)
                 diff = average[-1] - mean
-                logger.info(diff.round(3))
+                logger.info("? " + f"{diff.round(2)}".rjust(6) + " > +-3")
                 break_counter = 0
-                if diff > 5:
-                    sleep(uniform(0.3, 1))
-                    pyautogui.moveTo(x + 20, y + 20)
-                    logger.warning(f"submit {x+20, y+20}")
-                    pyautogui.mouseDown()
+
+                if (diff >= 3 or diff <= -3) and len(average) > 1:
+                    logger.warning(f"submit {x+10, y+10}")
+                    sleep(uniform(0.1, 0.3))
+                    smoothly_move(x + 10, y + 10)
                     sleep(uniform(0.2, 0.5))
-                    pyautogui.mouseUp()
+                    pyautogui.mouseDown(button="right")
+                    sleep(uniform(0.1, 0.3))
+                    pyautogui.mouseUp(button="right")
+                    sleep(uniform(0.2, 0.6))
                     break
+
                 average.append(mean)
-            except:
+
+            except Exception as exc:
                 if not interruption_indicator:
-                    logger.warning("skip and continue")
                     for pt in zip(*loc[::-1]):
                         x = int(pt[0])
                         y = int(pt[1])
                     interruption_indicator = True
                     break_counter += 1
                 else:
+                    logger.error('bad matching')
                     break
-        pyautogui.moveTo(randint(50, 150), randint(50, 150))
+
+        smoothly_move(randint(40, 325), randint(40, 720))
 
         # reload variables
         try:
